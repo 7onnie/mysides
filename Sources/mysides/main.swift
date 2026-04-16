@@ -1,6 +1,6 @@
 import Foundation
 
-let _Version = "1.0.0"
+let _Version = "1.0.2"
 let _Args    = CommandLine.arguments
 
 func printUsage() {
