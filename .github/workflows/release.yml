@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    name: Build universal binary and update Homebrew formula
+    runs-on: macos-14          # Apple Silicon runner, can cross-compile x86_64
+
+    permissions:
+      contents: write          # needed to upload release assets
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build arm64
+        run: swift build -c release --arch arm64
+
+      - name: Build x86_64
+        run: swift build -c release --arch x86_64
+
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            .build/arm64-apple-macosx/release/mysides \
+            .build/x86_64-apple-macosx/release/mysides \
+            -output .build/mysides-universal
+          lipo -info .build/mysides-universal
+
+      - name: Package tarball
+        id: package
+        run: |
+          _Version="${{ steps.version.outputs.version }}"
+          _TarName="mysides-${_Version}-universal.tar.gz"
+          _TmpDir="$(mktemp -d)/mysides-${_Version}"
+          mkdir -p "${_TmpDir}"
+          cp .build/mysides-universal "${_TmpDir}/mysides"
+          tar -czf "${_TarName}" -C "$(dirname ${_TmpDir})" "mysides-${_Version}"
+          echo "tarball=${_TarName}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 ${_TarName} | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "${{ steps.package.outputs.tarball }}" \
+            --clobber
+
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          _Version="${{ steps.version.outputs.version }}"
+          _SHA256="${{ steps.package.outputs.sha256 }}"
+          _TarName="${{ steps.package.outputs.tarball }}"
+
+          git clone https://x-access-token:${GH_TOKEN}@github.com/7onnie/homebrew-tap.git /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+
+          cat > Formula/mysides.rb << FORMULA
+          class Mysides < Formula
+            desc "CLI tool for managing the macOS Finder sidebar favorites"
+            homepage "https://github.com/7onnie/mysides"
+            url "https://github.com/7onnie/mysides/releases/download/v${_Version}/${_TarName}"
+            sha256 "${_SHA256}"
+            version "${_Version}"
+            license "MIT"
+
+            depends_on :macos => :ventura
+
+            def install
+              bin.install "mysides"
+            end
+
+            test do
+              assert_match "mysides ${_Version}", shell_output("#{bin}/mysides version")
+            end
+          end
+          FORMULA
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/mysides.rb
+          git commit -m "mysides ${_Version}"
+          git push
