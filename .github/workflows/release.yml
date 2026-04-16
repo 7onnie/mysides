@@ -63,8 +63,8 @@ jobs:
           _Version="${{ steps.version.outputs.version }}"
           _TarName="${{ steps.package.outputs.tarball }}"
           _URL="https://github.com/7onnie/mysides/releases/download/v${_Version}/${_TarName}"
-          # Wait briefly for GitHub CDN to propagate the upload
-          sleep 5
+          # Wait for GitHub CDN to propagate the upload (30s is safe in practice)
+          sleep 30
           echo "sha256=$(curl -sL ${_URL} | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Update Homebrew formula
