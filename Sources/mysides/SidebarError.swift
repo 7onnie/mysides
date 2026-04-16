@@ -6,6 +6,7 @@ enum SidebarError: Error, LocalizedError {
     case pathNotFound(String)
     case notADirectory(String)
     case accessDenied
+    case apiUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +24,8 @@ enum SidebarError: Error, LocalizedError {
             macOS requires Full Disk Access for this operation.
             Fix: System Settings → Privacy & Security → Full Disk Access → enable Terminal
             """
+        case .apiUnavailable(let detail):
+            return "LSSharedFileList API unavailable: \(detail)"
         }
     }
 }

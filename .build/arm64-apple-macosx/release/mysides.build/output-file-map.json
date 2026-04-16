@@ -1,0 +1,25 @@
+{
+  "": {
+    "dependencies": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/mysides.d",
+    "object": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/mysides.o",
+    "swift-dependencies": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/primary.swiftdeps"
+  },
+  "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift": {
+    "object": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarError.swift.o",
+    "swiftmodule": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarError~partial.swiftmodule",
+    "swift-dependencies": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarError.swiftdeps",
+    "diagnostics": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarError.dia"
+  },
+  "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift": {
+    "object": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarManager.swift.o",
+    "swiftmodule": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarManager.swiftdeps",
+    "diagnostics": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/SidebarManager.dia"
+  },
+  "/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift": {
+    "object": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/main.swift.o",
+    "swiftmodule": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/main.swiftdeps",
+    "diagnostics": "/Users/user/GitHubRepos/MySides/.build/arm64-apple-macosx/release/mysides.build/main.dia"
+  }
+}

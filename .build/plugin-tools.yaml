@@ -1,0 +1,66 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<mysides-x86_64-apple-macosx-release.exe>","<mysides-x86_64-apple-macosx-release.module>"]
+  "mysides-x86_64-apple-macosx-release.exe": ["<mysides-x86_64-apple-macosx-release.exe>"]
+  "mysides-x86_64-apple-macosx-release.module": ["<mysides-x86_64-apple-macosx-release.module>"]
+  "test": ["<mysides-x86_64-apple-macosx-release.exe>","<mysides-x86_64-apple-macosx-release.module>"]
+default: "main"
+nodes:
+  "/Users/user/GitHubRepos/MySides/Sources/mysides/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift","/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift","/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift"]
+    outputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources"]
+    description: "Write auxiliary file /Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources"
+
+  "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o"]
+    outputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList"
+
+  "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+
+  "<mysides-x86_64-apple-macosx-release.exe>":
+    tool: phony
+    inputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides"]
+    outputs: ["<mysides-x86_64-apple-macosx-release.exe>"]
+
+  "<mysides-x86_64-apple-macosx-release.module>":
+    tool: phony
+    inputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules/mysides.swiftmodule"]
+    outputs: ["<mysides-x86_64-apple-macosx-release.module>"]
+
+  "C.mysides-x86_64-apple-macosx-release.exe":
+    tool: shell
+    inputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList"]
+    outputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides"]
+    description: "Linking ./.build/x86_64-apple-macosx/release/mysides"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release","-o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides","-module-name","mysides","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-dead_strip","-Xlinker","-alias","-Xlinker","_mysides_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","x86_64-apple-macosx13.0","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.mysides-x86_64-apple-macosx-release.module":
+    tool: shell
+    inputs: ["/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift","/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift","/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources"]
+    outputs: ["/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules/mysides.swiftmodule"]
+    description: "Compiling Swift Module 'mysides' (3 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","mysides","-emit-dependencies","-emit-module","-emit-module-path","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules/mysides.swiftmodule","-output-file-map","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/output-file-map.json","-whole-module-optimization","-num-threads","10","-c","@/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources","-I","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules","-target","x86_64-apple-macosx13.0","-whole-module-optimization","-num-threads","10","-serialize-diagnostics","-O","-j10","-DSWIFT_PACKAGE","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","mysides_main","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","mysides"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/user/GitHubRepos/MySides/Sources/mysides/","/Users/user/GitHubRepos/MySides/Package.swift","/Users/user/GitHubRepos/MySides/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

@@ -1,0 +1,269 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.mysides-x86_64-apple-macosx-release.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources",
+      "importPath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "mysides",
+      "moduleOutputPath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules/mysides.swiftmodule",
+      "objects" : [
+        "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o",
+        "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o",
+        "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "x86_64-apple-macosx13.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "10",
+        "-serialize-diagnostics",
+        "-O",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "mysides_main",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "mysides"
+      ],
+      "outputFileMapPath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules/mysides.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift",
+        "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift",
+        "/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift"
+      ],
+      "tempsPath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build",
+      "wholeModuleOptimization" : true
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "mysides" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "mysides",
+      "-package-name",
+      "mysides",
+      "-c",
+      "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift",
+      "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift",
+      "/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift",
+      "-I",
+      "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/Modules",
+      "-target",
+      "x86_64-apple-macosx13.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "10",
+      "-serialize-diagnostics",
+      "-O",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "mysides_main",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "mysides",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "mysides" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarError.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/Sources/mysides/SidebarManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/Sources/mysides/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/sources"
+    },
+    "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarError.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/SidebarManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/mysides.product/Objects.LinkFileList"
+    },
+    "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/user/GitHubRepos/MySides/.build/x86_64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}
