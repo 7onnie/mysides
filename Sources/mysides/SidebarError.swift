@@ -5,6 +5,7 @@ enum SidebarError: Error, LocalizedError {
     case itemNotFound(String)
     case pathNotFound(String)
     case notADirectory(String)
+    case accessDenied
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +17,12 @@ enum SidebarError: Error, LocalizedError {
             return "Path does not exist: \(path)"
         case .notADirectory(let path):
             return "Path is not a directory: \(path)"
+        case .accessDenied:
+            return """
+            Access denied to sidebar file.
+            macOS requires Full Disk Access for this operation.
+            Fix: System Settings → Privacy & Security → Full Disk Access → enable Terminal
+            """
         }
     }
 }
