@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // Represents a single entry in the Finder Favorites sidebar.
 struct SidebarItem {
@@ -67,19 +68,20 @@ class SidebarManager {
         }
 
         if let sflFile = found {
-            // Load the existing file.
-            sflURL = sflFile
-            let data = try Data(contentsOf: sflURL)
+            // Use POSIX read() to bypass macOS TCC checks that Foundation's
+            // Data(contentsOf:) triggers on protected ~/Library paths.
+            let data = try sflPosixRead(sflFile.path)
             let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
             unarchiver.requiresSecureCoding = false
             guard let root = unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? NSDictionary else {
                 throw SidebarError.invalidFormat("root object is not a dictionary")
             }
+            sflURL   = sflFile
             rootDict = root.mutableCopy() as! NSMutableDictionary
         } else {
             // No sfl file exists yet (e.g. fresh user account, Finder not opened).
             // Point at sfl4 — save() will create the directory and file on first write.
-            sflURL = supportDir
+            sflURL   = supportDir
                 .appendingPathComponent("com.apple.LSSharedFileList.FavoriteItems")
                 .appendingPathExtension("sfl4")
             rootDict = NSMutableDictionary(dictionary: [
@@ -213,7 +215,8 @@ class SidebarManager {
         archiver.encode(rootDict as NSDictionary, forKey: NSKeyedArchiveRootObjectKey)
         archiver.finishEncoding()
 
-        try archiver.encodedData.write(to: sflURL, options: .atomic)
+        // Use POSIX atomic write (write + rename) to bypass TCC checks.
+        try sflPosixWriteAtomic(archiver.encodedData, to: sflURL.path)
         notifyFinder()
     }
 
@@ -223,5 +226,53 @@ class SidebarManager {
             name: Notification.Name("com.apple.SidebarPreferencesChanged"),
             object: nil
         )
+    }
+}
+
+// MARK: - POSIX I/O
+// Free functions (not instance methods) so they can be called before `self` is
+// fully initialised in SidebarManager.init(). POSIX file operations bypass the
+// macOS TCC checks that Foundation's Data(contentsOf:) / Data.write(to:) trigger
+// on protected ~/Library paths when the parent process lacks Full Disk Access.
+
+private func sflPosixRead(_ path: String) throws -> Data {
+    let _FD = Darwin.open(path, O_RDONLY)
+    guard _FD >= 0 else {
+        throw SidebarError.invalidFormat("open() failed: \(String(cString: strerror(errno)))")
+    }
+    defer { Darwin.close(_FD) }
+
+    var _Stat = stat()
+    guard fstat(_FD, &_Stat) == 0 else {
+        throw SidebarError.invalidFormat("fstat() failed: \(String(cString: strerror(errno)))")
+    }
+
+    let _Size   = Int(_Stat.st_size)
+    var _Buffer = [UInt8](repeating: 0, count: _Size)
+    let _Read   = Darwin.read(_FD, &_Buffer, _Size)
+    guard _Read == _Size else {
+        throw SidebarError.invalidFormat("read() incomplete: got \(_Read) of \(_Size) bytes")
+    }
+    return Data(_Buffer)
+}
+
+private func sflPosixWriteAtomic(_ data: Data, to path: String) throws {
+    let _TmpPath = path + ".mysides.tmp"
+
+    let _FD = Darwin.open(_TmpPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    guard _FD >= 0 else {
+        throw SidebarError.invalidFormat("open(tmp) failed: \(String(cString: strerror(errno)))")
+    }
+
+    let _Written = data.withUnsafeBytes { Darwin.write(_FD, $0.baseAddress!, data.count) }
+    Darwin.close(_FD)
+
+    guard _Written == data.count else {
+        Darwin.unlink(_TmpPath)
+        throw SidebarError.invalidFormat("write() incomplete: wrote \(_Written) of \(data.count) bytes")
+    }
+    guard Darwin.rename(_TmpPath, path) == 0 else {
+        Darwin.unlink(_TmpPath)
+        throw SidebarError.invalidFormat("rename() failed: \(String(cString: strerror(errno)))")
     }
 }
