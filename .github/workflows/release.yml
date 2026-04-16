@@ -43,9 +43,9 @@ jobs:
           _TmpDir="$(mktemp -d)/mysides-${_Version}"
           mkdir -p "${_TmpDir}"
           cp .build/mysides-universal "${_TmpDir}/mysides"
-          tar -czf "${_TarName}" -C "$(dirname ${_TmpDir})" "mysides-${_Version}"
+          # Exclude macOS extended attributes so the tarball is reproducible
+          tar -czf "${_TarName}" --no-xattrs -C "$(dirname ${_TmpDir})" "mysides-${_Version}"
           echo "tarball=${_TarName}" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(shasum -a 256 ${_TarName} | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Upload to GitHub release
         env:
@@ -55,12 +55,24 @@ jobs:
             "${{ steps.package.outputs.tarball }}" \
             --clobber
 
+      - name: Compute SHA256 from GitHub-served file
+        id: sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          _Version="${{ steps.version.outputs.version }}"
+          _TarName="${{ steps.package.outputs.tarball }}"
+          _URL="https://github.com/7onnie/mysides/releases/download/v${_Version}/${_TarName}"
+          # Wait briefly for GitHub CDN to propagate the upload
+          sleep 5
+          echo "sha256=$(curl -sL ${_URL} | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Update Homebrew formula
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           _Version="${{ steps.version.outputs.version }}"
-          _SHA256="${{ steps.package.outputs.sha256 }}"
+          _SHA256="${{ steps.sha256.outputs.sha256 }}"
           _TarName="${{ steps.package.outputs.tarball }}"
 
           git clone https://x-access-token:${GH_TOKEN}@github.com/7onnie/homebrew-tap.git /tmp/homebrew-tap
