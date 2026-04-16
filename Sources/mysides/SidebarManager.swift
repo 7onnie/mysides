@@ -65,19 +65,28 @@ class SidebarManager {
                 break
             }
         }
-        guard let sflFile = found else {
-            throw SidebarError.sflFileNotFound
-        }
-        sflURL = sflFile
 
-        let data = try Data(contentsOf: sflURL)
-        let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
-        unarchiver.requiresSecureCoding = false
-
-        guard let root = unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? NSDictionary else {
-            throw SidebarError.invalidFormat("root object is not a dictionary")
+        if let sflFile = found {
+            // Load the existing file.
+            sflURL = sflFile
+            let data = try Data(contentsOf: sflURL)
+            let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
+            unarchiver.requiresSecureCoding = false
+            guard let root = unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? NSDictionary else {
+                throw SidebarError.invalidFormat("root object is not a dictionary")
+            }
+            rootDict = root.mutableCopy() as! NSMutableDictionary
+        } else {
+            // No sfl file exists yet (e.g. fresh user account, Finder not opened).
+            // Point at sfl4 — save() will create the directory and file on first write.
+            sflURL = supportDir
+                .appendingPathComponent("com.apple.LSSharedFileList.FavoriteItems")
+                .appendingPathExtension("sfl4")
+            rootDict = NSMutableDictionary(dictionary: [
+                "items":      NSMutableArray(),
+                "properties": NSDictionary(),
+            ])
         }
-        rootDict = root.mutableCopy() as! NSMutableDictionary
     }
 
     // MARK: - Public API
@@ -194,6 +203,12 @@ class SidebarManager {
     }
 
     private func save() throws {
+        // Create the sharedfilelist directory if it doesn't exist yet.
+        let dir = sflURL.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+
         let archiver = NSKeyedArchiver(requiringSecureCoding: false)
         archiver.encode(rootDict as NSDictionary, forKey: NSKeyedArchiveRootObjectKey)
         archiver.finishEncoding()

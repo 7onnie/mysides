@@ -1,7 +1,6 @@
 import Foundation
 
 enum SidebarError: Error, LocalizedError {
-    case sflFileNotFound
     case invalidFormat(String)
     case itemNotFound(String)
     case pathNotFound(String)
@@ -9,8 +8,6 @@ enum SidebarError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .sflFileNotFound:
-            return "Sidebar file not found in ~/Library/Application Support/com.apple.sharedfilelist/"
         case .invalidFormat(let msg):
             return "Invalid sidebar file format: \(msg)"
         case .itemNotFound(let name):
