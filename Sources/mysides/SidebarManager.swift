@@ -8,7 +8,6 @@ struct SidebarItem {
     let visibility: Int
     let customProperties: NSDictionary
 
-    // Resolves the bookmark to a URL without mounting volumes or showing UI.
     var resolvedURL: URL? {
         var isStale = false
         return try? URL(
@@ -19,8 +18,6 @@ struct SidebarItem {
         )
     }
 
-    // Uses an explicit custom Name property if present, otherwise falls back to
-    // the last path component of the resolved URL.
     var displayName: String {
         if let name = customProperties["Name"] as? String, !name.isEmpty {
             return name
@@ -31,21 +28,9 @@ struct SidebarItem {
     var urlString: String {
         return resolvedURL?.absoluteString ?? "NOTFOUND"
     }
-
-    // Serialises the item back to the NSDictionary form expected by NSKeyedArchiver.
-    func asDictionary() -> NSDictionary {
-        return [
-            "visibility":           visibility as NSNumber,
-            "CustomItemProperties": customProperties,
-            "Bookmark":             bookmarkData as NSData,
-            "uuid":                 uuid,
-        ]
-    }
 }
 
 // Manages the .sfl4 / .sfl3 / .sfl2 Finder sidebar file.
-// All mutations are written atomically; Finder is notified via a distributed
-// notification so changes appear without restarting Finder.
 class SidebarManager {
     private let sflURL: URL
     private var rootDict: NSMutableDictionary
@@ -54,7 +39,6 @@ class SidebarManager {
         let supportDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/com.apple.sharedfilelist")
 
-        // Prefer the newest format present on this system.
         let formats = ["sfl4", "sfl3", "sfl2"]
         var found: URL?
         for ext in formats {
@@ -68,9 +52,7 @@ class SidebarManager {
         }
 
         if let sflFile = found {
-            // Use POSIX read() to bypass macOS TCC checks that Foundation's
-            // Data(contentsOf:) triggers on protected ~/Library paths.
-            let data = try sflPosixRead(sflFile.path)
+            let data = try sflRead(sflFile.path)
             let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
             unarchiver.requiresSecureCoding = false
             guard let root = unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? NSDictionary else {
@@ -79,8 +61,6 @@ class SidebarManager {
             sflURL   = sflFile
             rootDict = root.mutableCopy() as! NSMutableDictionary
         } else {
-            // No sfl file exists yet (e.g. fresh user account, Finder not opened).
-            // Point at sfl4 — save() will create the directory and file on first write.
             sflURL   = supportDir
                 .appendingPathComponent("com.apple.LSSharedFileList.FavoriteItems")
                 .appendingPathExtension("sfl4")
@@ -119,8 +99,6 @@ class SidebarManager {
             relativeTo: nil
         )
 
-        // Only store an explicit Name when it differs from the folder's own name,
-        // to stay consistent with how Finder itself writes sidebar entries.
         var customProps: NSDictionary = NSDictionary()
         if name != url.lastPathComponent {
             customProps = ["Name": name] as NSDictionary
@@ -150,14 +128,12 @@ class SidebarManager {
                   let bookmark = dict["Bookmark"] as? Data
             else { continue }
 
-            // Match against explicit custom Name first.
             if let customName = (dict["CustomItemProperties"] as? NSDictionary)?["Name"] as? String,
                customName == name {
                 indexToRemove = i
                 break
             }
 
-            // Fall back to the resolved URL's last path component.
             var isStale = false
             if let url = try? URL(
                 resolvingBookmarkData: bookmark,
@@ -205,7 +181,6 @@ class SidebarManager {
     }
 
     private func save() throws {
-        // Create the sharedfilelist directory if it doesn't exist yet.
         let dir = sflURL.deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: dir.path) {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -215,12 +190,10 @@ class SidebarManager {
         archiver.encode(rootDict as NSDictionary, forKey: NSKeyedArchiveRootObjectKey)
         archiver.finishEncoding()
 
-        // Use POSIX atomic write (write + rename) to bypass TCC checks.
-        try sflPosixWriteAtomic(archiver.encodedData, to: sflURL.path)
+        try sflWrite(archiver.encodedData, to: sflURL.path)
         notifyFinder()
     }
 
-    // Posts a distributed notification that Finder listens for to reload its sidebar.
     private func notifyFinder() {
         DistributedNotificationCenter.default().post(
             name: Notification.Name("com.apple.SidebarPreferencesChanged"),
@@ -229,50 +202,113 @@ class SidebarManager {
     }
 }
 
-// MARK: - POSIX I/O
-// Free functions (not instance methods) so they can be called before `self` is
-// fully initialised in SidebarManager.init(). POSIX file operations bypass the
-// macOS TCC checks that Foundation's Data(contentsOf:) / Data.write(to:) trigger
-// on protected ~/Library paths when the parent process lacks Full Disk Access.
+// MARK: - I/O strategy
+//
+// macOS 16 (Tahoe) enforces TCC on ~/Library/Application Support/com.apple.sharedfilelist/
+// even at the POSIX level for non-platform-signed binaries. Platform binaries (/bin/cat,
+// /bin/mv) are exempt from this restriction.
+//
+// Strategy (tried in order):
+//   1. POSIX open()/read() — fast, works on macOS ≤15 or when Terminal has FDA
+//   2. Subprocess via /bin/cat or /bin/mv — works on macOS 16 without FDA
+//   3. Clear error message guiding the user to grant Full Disk Access
 
-private func sflPosixRead(_ path: String) throws -> Data {
-    let _FD = Darwin.open(path, O_RDONLY)
-    guard _FD >= 0 else {
-        throw SidebarError.invalidFormat("open() failed: \(String(cString: strerror(errno)))")
+private func sflRead(_ path: String) throws -> Data {
+    // Attempt 1: direct POSIX read
+    if let data = posixRead(path) {
+        return data
     }
+    let _PosixErrno = errno
+
+    // Attempt 2: spawn /bin/cat (Apple platform binary, TCC-exempt)
+    if let data = subprocessRead(path) {
+        return data
+    }
+
+    // Both failed — give an actionable error
+    if _PosixErrno == EPERM {
+        throw SidebarError.accessDenied
+    }
+    throw SidebarError.invalidFormat("read failed (errno \(_PosixErrno): \(String(cString: strerror(_PosixErrno))))")
+}
+
+private func sflWrite(_ data: Data, to path: String) throws {
+    // Attempt 1: POSIX atomic write (write to tmp + rename)
+    if posixWriteAtomic(data, to: path) {
+        return
+    }
+    let _PosixErrno = errno
+
+    // Attempt 2: write to /tmp, then move via /bin/mv (TCC-exempt)
+    if subprocessWriteAtomic(data, to: path) {
+        return
+    }
+
+    if _PosixErrno == EPERM {
+        throw SidebarError.accessDenied
+    }
+    throw SidebarError.invalidFormat("write failed (errno \(_PosixErrno): \(String(cString: strerror(_PosixErrno))))")
+}
+
+// MARK: - POSIX primitives
+
+private func posixRead(_ path: String) -> Data? {
+    let _FD = Darwin.open(path, O_RDONLY)
+    guard _FD >= 0 else { return nil }
     defer { Darwin.close(_FD) }
 
     var _Stat = stat()
-    guard fstat(_FD, &_Stat) == 0 else {
-        throw SidebarError.invalidFormat("fstat() failed: \(String(cString: strerror(errno)))")
-    }
+    guard fstat(_FD, &_Stat) == 0 else { return nil }
 
     let _Size   = Int(_Stat.st_size)
     var _Buffer = [UInt8](repeating: 0, count: _Size)
-    let _Read   = Darwin.read(_FD, &_Buffer, _Size)
-    guard _Read == _Size else {
-        throw SidebarError.invalidFormat("read() incomplete: got \(_Read) of \(_Size) bytes")
-    }
+    guard Darwin.read(_FD, &_Buffer, _Size) == _Size else { return nil }
     return Data(_Buffer)
 }
 
-private func sflPosixWriteAtomic(_ data: Data, to path: String) throws {
-    let _TmpPath = path + ".mysides.tmp"
-
-    let _FD = Darwin.open(_TmpPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-    guard _FD >= 0 else {
-        throw SidebarError.invalidFormat("open(tmp) failed: \(String(cString: strerror(errno)))")
-    }
+private func posixWriteAtomic(_ data: Data, to path: String) -> Bool {
+    let _Tmp = path + ".mysides.tmp"
+    let _FD  = Darwin.open(_Tmp, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    guard _FD >= 0 else { return false }
 
     let _Written = data.withUnsafeBytes { Darwin.write(_FD, $0.baseAddress!, data.count) }
     Darwin.close(_FD)
 
-    guard _Written == data.count else {
-        Darwin.unlink(_TmpPath)
-        throw SidebarError.invalidFormat("write() incomplete: wrote \(_Written) of \(data.count) bytes")
+    guard _Written == data.count else { Darwin.unlink(_Tmp); return false }
+    guard Darwin.rename(_Tmp, path) == 0 else { Darwin.unlink(_Tmp); return false }
+    return true
+}
+
+// MARK: - Subprocess fallback (platform-signed binaries bypass TCC)
+
+private func subprocessRead(_ path: String) -> Data? {
+    let _Proc  = Process()
+    _Proc.executableURL = URL(fileURLWithPath: "/bin/cat")
+    _Proc.arguments     = [path]
+    let _Pipe  = Pipe()
+    _Proc.standardOutput = _Pipe
+    _Proc.standardError  = FileHandle.nullDevice
+    guard (try? _Proc.run()) != nil else { return nil }
+    let _Data = _Pipe.fileHandleForReading.readDataToEndOfFile()
+    _Proc.waitUntilExit()
+    return _Proc.terminationStatus == 0 && !_Data.isEmpty ? _Data : nil
+}
+
+private func subprocessWriteAtomic(_ data: Data, to path: String) -> Bool {
+    // Write to /tmp first (no TCC restriction), then move with /bin/mv.
+    let _Tmp = "/tmp/mysides-\(UUID().uuidString).tmp"
+    guard FileManager.default.createFile(atPath: _Tmp, contents: data) else { return false }
+
+    let _Proc = Process()
+    _Proc.executableURL = URL(fileURLWithPath: "/bin/mv")
+    _Proc.arguments     = [_Tmp, path]
+    _Proc.standardError = FileHandle.nullDevice
+    guard (try? _Proc.run()) != nil else { try? FileManager.default.removeItem(atPath: _Tmp); return false }
+    _Proc.waitUntilExit()
+
+    if _Proc.terminationStatus != 0 {
+        try? FileManager.default.removeItem(atPath: _Tmp)
+        return false
     }
-    guard Darwin.rename(_TmpPath, path) == 0 else {
-        Darwin.unlink(_TmpPath)
-        throw SidebarError.invalidFormat("rename() failed: \(String(cString: strerror(errno)))")
-    }
+    return true
 }
