@@ -12,10 +12,11 @@ import Darwin
 //
 // Two lists are managed:
 //   FavoriteItems   → the "Favourites" section (list/add/remove individual folders)
-//   FavoriteVolumes → the "Locations" section  (toggle category visibility)
+//   FavoriteVolumes → the "Locations" section  (toggle category/item visibility)
 //
-// The "Recent Tags" toggle lives in com.apple.finder preferences, not in
-// LSSharedFileList, so it is handled via CFPreferences.
+// All property keys used here were verified by inspecting the actual
+// FavoriteVolumes.sfl4 file which stores them as real NSKeyedArchiver keys.
+// "Recent Tags" lives in com.apple.finder preferences, not LSSharedFileList.
 class SidebarManager {
 
     // MARK: - Private C function type aliases
@@ -25,8 +26,7 @@ class SidebarManager {
     private typealias SFLNameFn     = @convention(c) (CFTypeRef) -> Unmanaged<CFString>?
     private typealias SFLURLFn      = @convention(c) (CFTypeRef, UInt32, UnsafeMutablePointer<CFTypeRef?>?) -> Unmanaged<CFURL>?
     // Second param is OpaquePointer? because kLSSharedFileListItemLast = 0x2 (sentinel integer,
-    // not a real CF object).  Using CFTypeRef? here would cause Swift ARC to call
-    // swift_unknownObjectRetain(0x2) → immediate segfault.
+    // not a real CF object — using CFTypeRef? causes swift_unknownObjectRetain(0x2) → segfault).
     private typealias SFLInsertFn   = @convention(c) (CFTypeRef, OpaquePointer?, CFString?, CFTypeRef?, CFURL, CFDictionary?, CFArray?) -> CFTypeRef?
     private typealias SFLRemoveFn   = @convention(c) (CFTypeRef, CFTypeRef) -> OSStatus
     private typealias SFLCopyPropFn = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
@@ -44,12 +44,6 @@ class SidebarManager {
     private let _remove:   SFLRemoveFn
     private let _copyProp: SFLCopyPropFn
     private let _setProp:  SFLSetPropFn
-
-    // Locations property key strings (verified via runtime inspection on macOS 13-16)
-    private static let _kComputer   = "com.apple.LSSharedFileList.FavoriteVolumes.ComputerIsVisible" as CFString
-    private static let _kHardDrives = "com.apple.LSSharedFileList.FavoriteVolumes.ShowHardDrives" as CFString
-    private static let _kRemovable  = "com.apple.LSSharedFileList.FavoriteVolumes.ShowEjectableVolumes" as CFString
-    private static let _kNetwork    = "com.apple.LSSharedFileList.FavoriteVolumes.ShowNetworkVolumes" as CFString
 
     // Resolve flags from the old public header (stable across all macOS versions)
     private static let _NoUserInteraction: UInt32 = 1
@@ -112,9 +106,6 @@ class SidebarManager {
             throw SidebarError.apiUnavailable("LSSharedFileListCreate returned nil for FavoriteVolumes")
         }
         _SFLVol = _SFLVolRef
-
-        // dlclose intentionally omitted: framework stays loaded for the lifetime
-        // of the process, which is fine for a short-lived CLI tool.
     }
 
     // MARK: - Favourites: list / add / remove
@@ -158,11 +149,7 @@ class SidebarManager {
         guard _IsDir.boolValue else {
             throw SidebarError.notADirectory(_URL.path)
         }
-
-        let _DisplayName = _Name as CFString
-        let _CFURL       = _URL as CFURL
-
-        guard _insert(_SFL, _kLast, _DisplayName, nil, _CFURL, nil, nil) != nil else {
+        guard _insert(_SFL, _kLast, _Name as CFString, nil, _URL as CFURL, nil, nil) != nil else {
             throw SidebarError.apiUnavailable("LSSharedFileListInsertItemURL returned nil")
         }
         print("Added: \(_Name)")
@@ -170,11 +157,9 @@ class SidebarManager {
 
     func remove(name _Name: String) throws {
         let _Items = snapshot()
-
         guard let _Item = _Items.first(where: { displayName(for: $0) == _Name }) else {
             throw SidebarError.itemNotFound(_Name)
         }
-
         let _Status = _remove(_SFL, _Item)
         guard _Status == 0 else {
             throw SidebarError.apiUnavailable("LSSharedFileListItemRemove failed: OSStatus \(_Status)")
@@ -182,97 +167,175 @@ class SidebarManager {
         print("Removed: \(_Name)")
     }
 
-    // MARK: - Locations: items and state
+    // MARK: - Locations: items, state, and control
 
-    struct LocationsState {
-        var computer:   Bool
-        var harddrives: Bool
-        var removable:  Bool
-        var network:    Bool
-        var tags:       Bool
-    }
+    // All keys verified by inspecting the actual FavoriteVolumes.sfl4 NSKeyedArchiver payload.
+    // Keys that existed in the file before any writes = Finder writes them itself.
+    // Keys that were nil before our writes but accepted by lsd = added in newer macOS (14+).
+    private static let _locKey: [LocationItem: String] = [
+        .computer:    "com.apple.LSSharedFileList.FavoriteVolumes.ComputerIsVisible",
+        .harddrives:  "com.apple.LSSharedFileList.FavoriteVolumes.ShowHardDrives",
+        .external:    "com.apple.LSSharedFileList.FavoriteVolumes.ShowExternalVolumes",
+        .cds:         "com.apple.LSSharedFileList.FavoriteVolumes.ShowEjectableVolumes",
+        .bonjour:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowBonjour",
+        .servers:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowConnectedServers",
+        .airdrop:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowAirDrop",
+        .icloud:      "com.apple.LSSharedFileList.FavoriteVolumes.ShowiCloudDrive",
+        .home:        "com.apple.LSSharedFileList.FavoriteVolumes.ShowHome",
+        .trash:       "com.apple.LSSharedFileList.FavoriteVolumes.ShowTrash",
+        .cloudstorage:"com.apple.LSSharedFileList.FavoriteVolumes.ShowCloudStorage",
+    ]
 
     enum LocationItem: String, CaseIterable {
-        case computer   = "computer"
-        case harddrives = "harddrives"
-        case removable  = "removable"
-        case network    = "network"
-        case tags       = "tags"
+        // Locations section
+        case icloud       = "icloud"       // iCloud Drive
+        case cloudstorage = "cloudstorage" // Third-party cloud (Dropbox, Nextcloud…)
+        case home         = "home"         // Home folder (~/)
+        case computer     = "computer"     // Mac itself (JonHa-MBP etc.)
+        case harddrives   = "harddrives"   // Internal hard disks
+        case external     = "external"     // External drives (USB, Thunderbolt)
+        case cds          = "cds"          // CDs, DVDs, iOS devices
+        case airdrop      = "airdrop"      // AirDrop
+        case bonjour      = "bonjour"      // Bonjour computers
+        case servers      = "servers"      // Connected network servers
+        case trash        = "trash"        // Trash
+        // Tags section
+        case tags         = "tags"         // Recent Tags
 
         var label: String {
             switch self {
-            case .computer:   return "Mac (computer icon)"
-            case .harddrives: return "Internal hard disks"
-            case .removable:  return "External disks, CDs, DVDs, iOS devices"
-            case .network:    return "Servers, Bonjour computers"
-            case .tags:       return "Recent Tags section"
+            case .icloud:       return "iCloud Drive"
+            case .cloudstorage: return "Cloud storage (Nextcloud, Dropbox…)"
+            case .home:         return "Home folder"
+            case .computer:     return "Mac (computer icon)"
+            case .harddrives:   return "Internal hard disks"
+            case .external:     return "External disks"
+            case .cds:          return "CDs, DVDs, iOS devices"
+            case .airdrop:      return "AirDrop"
+            case .bonjour:      return "Bonjour computers"
+            case .servers:      return "Connected servers"
+            case .trash:        return "Trash"
+            case .tags:         return "Recent Tags section"
             }
         }
     }
 
+    struct LocationsState {
+        var icloud:       Bool
+        var cloudstorage: Bool
+        var home:         Bool
+        var computer:     Bool
+        var harddrives:   Bool
+        var external:     Bool
+        var cds:          Bool
+        var airdrop:      Bool
+        var bonjour:      Bool
+        var servers:      Bool
+        var trash:        Bool
+        var tags:         Bool
+    }
+
     func getLocations() -> LocationsState {
-        func boolProp(_ _Key: CFString) -> Bool {
-            guard let _V = _copyProp(_SFLVol, _Key)?.takeRetainedValue() else { return true }
-            return (_V as AnyObject).boolValue
+        func vol(_ _Item: LocationItem) -> Bool {
+            guard let _Key = Self._locKey[_Item] else { return true }
+            guard let _V = _copyProp(_SFLVol, _Key as CFString)?.takeRetainedValue() else { return true }
+            return (_V as AnyObject).boolValue ?? true
         }
         let _TagsRaw = CFPreferencesCopyAppValue("ShowRecentTags" as CFString, "com.apple.finder" as CFString)
         let _Tags: Bool = _TagsRaw.map { ($0 as AnyObject).boolValue ?? true } ?? true
         return LocationsState(
-            computer:   boolProp(Self._kComputer),
-            harddrives: boolProp(Self._kHardDrives),
-            removable:  boolProp(Self._kRemovable),
-            network:    boolProp(Self._kNetwork),
-            tags:       _Tags
+            icloud:       vol(.icloud),
+            cloudstorage: vol(.cloudstorage),
+            home:         vol(.home),
+            computer:     vol(.computer),
+            harddrives:   vol(.harddrives),
+            external:     vol(.external),
+            cds:          vol(.cds),
+            airdrop:      vol(.airdrop),
+            bonjour:      vol(.bonjour),
+            servers:      vol(.servers),
+            trash:        vol(.trash),
+            tags:         _Tags
         )
     }
 
     /// Human-readable Locations status table.
     func showLocations() {
-        let _State = getLocations()
-        func row(_ _Item: LocationItem, _ _Val: Bool) {
-            let _Key   = _Item.rawValue.padding(toLength: 12, withPad: " ", startingAt: 0)
-            let _Flag  = _Val ? "on " : "off"
+        let _S = getLocations()
+        let _Pairs: [(LocationItem, Bool)] = [
+            (.icloud,       _S.icloud),
+            (.cloudstorage, _S.cloudstorage),
+            (.home,         _S.home),
+            (.computer,     _S.computer),
+            (.harddrives,   _S.harddrives),
+            (.external,     _S.external),
+            (.cds,          _S.cds),
+            (.airdrop,      _S.airdrop),
+            (.bonjour,      _S.bonjour),
+            (.servers,      _S.servers),
+            (.trash,        _S.trash),
+            (.tags,         _S.tags),
+        ]
+        for (_Item, _Val) in _Pairs {
+            let _Key  = _Item.rawValue.padding(toLength: 13, withPad: " ", startingAt: 0)
+            let _Flag = _Val ? "on " : "off"
             print("\(_Key) \(_Flag)  \(_Item.label)")
         }
-        row(.computer,   _State.computer)
-        row(.harddrives, _State.harddrives)
-        row(.removable,  _State.removable)
-        row(.network,    _State.network)
-        row(.tags,       _State.tags)
     }
 
-    /// Machine-readable JSON object: {"computer":true,…}
+    /// Machine-readable JSON object.
     func showLocationsJSON() {
         let _S = getLocations()
-        print("{\"computer\":\(_S.computer),\"harddrives\":\(_S.harddrives),\"removable\":\(_S.removable),\"network\":\(_S.network),\"tags\":\(_S.tags)}")
+        let _Parts = [
+            "\"icloud\":\(_S.icloud)",
+            "\"cloudstorage\":\(_S.cloudstorage)",
+            "\"home\":\(_S.home)",
+            "\"computer\":\(_S.computer)",
+            "\"harddrives\":\(_S.harddrives)",
+            "\"external\":\(_S.external)",
+            "\"cds\":\(_S.cds)",
+            "\"airdrop\":\(_S.airdrop)",
+            "\"bonjour\":\(_S.bonjour)",
+            "\"servers\":\(_S.servers)",
+            "\"trash\":\(_S.trash)",
+            "\"tags\":\(_S.tags)",
+        ]
+        print("{\(_Parts.joined(separator: ","))}")
     }
 
-    func setLocation(item _Item: LocationItem, enabled _Enabled: Bool) throws {
-        switch _Item {
-
-        case .tags:
-            // Stored in com.apple.finder preferences, not in LSSharedFileList
+    /// Toggle a Locations item.
+    /// - Parameter restartFinder: when true (default) kills Finder so the change
+    ///   takes effect immediately; Finder relaunches automatically via launchd.
+    func setLocation(item _Item: LocationItem, enabled _Enabled: Bool, restartFinder _Restart: Bool = true) throws {
+        if _Item == .tags {
             let _Val: CFPropertyList = _Enabled ? kCFBooleanTrue! : kCFBooleanFalse!
             CFPreferencesSetAppValue("ShowRecentTags" as CFString, _Val, "com.apple.finder" as CFString)
             CFPreferencesAppSynchronize("com.apple.finder" as CFString)
-
-        default:
-            let _Key: CFString
-            switch _Item {
-            case .computer:   _Key = Self._kComputer
-            case .harddrives: _Key = Self._kHardDrives
-            case .removable:  _Key = Self._kRemovable
-            case .network:    _Key = Self._kNetwork
-            case .tags:       fatalError("unreachable")
+        } else {
+            guard let _Key = Self._locKey[_Item] else {
+                throw SidebarError.apiUnavailable("no property key for \(_Item.rawValue)")
             }
             let _Value: CFTypeRef = _Enabled ? kCFBooleanTrue! : kCFBooleanFalse!
-            let _Status = _setProp(_SFLVol, _Key, _Value)
+            let _Status = _setProp(_SFLVol, _Key as CFString, _Value)
             guard _Status == 0 else {
                 throw SidebarError.apiUnavailable("LSSharedFileListSetProperty failed: OSStatus \(_Status)")
             }
         }
 
         print("\(_Enabled ? "Enabled" : "Disabled"): \(_Item.rawValue)")
+
+        if _Restart {
+            SidebarManager.restartFinder()
+        }
+    }
+
+    /// Restart Finder so pending Locations changes become visible.
+    static func restartFinder() {
+        let _Task = Process()
+        _Task.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        _Task.arguments = ["Finder"]
+        try? _Task.run()
+        _Task.waitUntilExit()
     }
 
     // MARK: - Private helpers

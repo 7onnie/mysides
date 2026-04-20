@@ -1,25 +1,28 @@
 import Foundation
 
-let _Version = "1.0.5"
+let _Version = "1.0.6"
 let _Args    = CommandLine.arguments
 
 func printUsage() {
     let _Prog = (_Args[0] as NSString).lastPathComponent
     print("Usage: \(_Prog) <command> [arguments]")
     print("")
-    print("Favourites commands:")
-    print("  list [--json]                       List Finder sidebar favourites")
-    print("  add <name> <file:///path>            Append a folder to the sidebar")
-    print("  remove <name>                        Remove a sidebar item by name")
+    print("Favourites:")
+    print("  list [--json]                         List Finder sidebar favourites")
+    print("  add <name> <file:///path>              Append a folder to the sidebar")
+    print("  remove <name>                          Remove a sidebar item by name")
     print("")
-    print("Locations commands:")
-    print("  locations [--json]                   Show Locations section toggle states")
-    print("  locations set <item> <on|off>        Toggle a Locations item")
+    print("Locations:")
+    print("  locations [--json]                     Show all Locations toggle states")
+    print("  locations set <item> <on|off>          Toggle a Locations item")
+    print("  locations set <item> <on|off> --no-restart   Toggle without restarting Finder")
+    print("  locations apply                        Restart Finder to apply pending changes")
     print("")
-    print("  Location items: computer, harddrives, removable, network, tags")
+    print("  Items: icloud, cloudstorage, home, computer, harddrives,")
+    print("         external, cds, airdrop, bonjour, servers, trash, tags")
     print("")
     print("Other:")
-    print("  version                              Show version")
+    print("  version                                Show version")
     print("")
     print("Examples:")
     print("  \(_Prog) list")
@@ -28,8 +31,10 @@ func printUsage() {
     print("  \(_Prog) remove Projects")
     print("  \(_Prog) locations")
     print("  \(_Prog) locations --json")
-    print("  \(_Prog) locations set harddrives off")
-    print("  \(_Prog) locations set network on")
+    print("  \(_Prog) locations set airdrop off")
+    print("  \(_Prog) locations set harddrives off --no-restart")
+    print("  \(_Prog) locations set servers off --no-restart")
+    print("  \(_Prog) locations apply")
 }
 
 guard _Args.count >= 2 else {
@@ -43,11 +48,7 @@ do {
     case "list":
         let _JSON    = _Args.contains("--json")
         let _Manager = try SidebarManager()
-        if _JSON {
-            _Manager.listJSON()
-        } else {
-            _Manager.list()
-        }
+        if _JSON { _Manager.listJSON() } else { _Manager.list() }
 
     case "add":
         guard _Args.count >= 4 else {
@@ -57,7 +58,6 @@ do {
         }
         let _Name      = _Args[2]
         let _URIString = _Args[3]
-
         let _URL: URL
         if _URIString.hasPrefix("file://") {
             guard let _U = URL(string: _URIString) else {
@@ -66,10 +66,8 @@ do {
             }
             _URL = _U
         } else {
-            // Accept plain paths as a convenience in addition to file:// URIs.
             _URL = URL(fileURLWithPath: _URIString)
         }
-
         let _Manager = try SidebarManager()
         try _Manager.add(name: _Name, url: _URL)
 
@@ -83,19 +81,25 @@ do {
         try _Manager.remove(name: _Args[2])
 
     case "locations":
-        if _Args.count >= 3 && _Args[2] == "set" {
-            // locations set <item> <on|off>
+        if _Args.count >= 3 && _Args[2] == "apply" {
+            // locations apply — restart Finder to make pending changes visible
+            SidebarManager.restartFinder()
+            print("Finder restarted.")
+
+        } else if _Args.count >= 3 && _Args[2] == "set" {
+            // locations set <item> <on|off> [--no-restart]
             guard _Args.count >= 5 else {
                 fputs("Error: 'locations set' requires <item> and <on|off>\n", stderr)
-                fputs("Valid items: \(SidebarManager.LocationItem.allCases.map { $0.rawValue }.joined(separator: ", "))\n", stderr)
+                let _Valid = SidebarManager.LocationItem.allCases.map { $0.rawValue }.joined(separator: ", ")
+                fputs("Valid items: \(_Valid)\n", stderr)
                 exit(1)
             }
             let _ItemStr  = _Args[3]
             let _StateStr = _Args[4]
 
             guard let _Item = SidebarManager.LocationItem(rawValue: _ItemStr) else {
-                fputs("Error: unknown location item '\(_ItemStr)'\n", stderr)
-                fputs("Valid items: \(SidebarManager.LocationItem.allCases.map { $0.rawValue }.joined(separator: ", "))\n", stderr)
+                let _Valid = SidebarManager.LocationItem.allCases.map { $0.rawValue }.joined(separator: ", ")
+                fputs("Error: unknown location item '\(_ItemStr)'\nValid items: \(_Valid)\n", stderr)
                 exit(1)
             }
             guard _StateStr == "on" || _StateStr == "off" else {
@@ -103,18 +107,15 @@ do {
                 exit(1)
             }
 
-            let _Manager = try SidebarManager()
-            try _Manager.setLocation(item: _Item, enabled: _StateStr == "on")
+            let _NoRestart = _Args.contains("--no-restart")
+            let _Manager   = try SidebarManager()
+            try _Manager.setLocation(item: _Item, enabled: _StateStr == "on", restartFinder: !_NoRestart)
 
         } else {
             // locations [--json]
             let _JSON    = _Args.contains("--json")
             let _Manager = try SidebarManager()
-            if _JSON {
-                _Manager.showLocationsJSON()
-            } else {
-                _Manager.showLocations()
-            }
+            if _JSON { _Manager.showLocationsJSON() } else { _Manager.showLocations() }
         }
 
     case "version":
