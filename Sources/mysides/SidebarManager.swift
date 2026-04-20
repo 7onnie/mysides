@@ -29,8 +29,11 @@ class SidebarManager {
     // not a real CF object — using CFTypeRef? causes swift_unknownObjectRetain(0x2) → segfault).
     private typealias SFLInsertFn   = @convention(c) (CFTypeRef, OpaquePointer?, CFString?, CFTypeRef?, CFURL, CFDictionary?, CFArray?) -> CFTypeRef?
     private typealias SFLRemoveFn   = @convention(c) (CFTypeRef, CFTypeRef) -> OSStatus
-    private typealias SFLCopyPropFn = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
-    private typealias SFLSetPropFn  = @convention(c) (CFTypeRef, CFString, CFTypeRef) -> OSStatus
+    private typealias SFLCopyPropFn     = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
+    private typealias SFLSetPropFn      = @convention(c) (CFTypeRef, CFString, CFTypeRef) -> OSStatus
+    // Item-level variants (LSSharedFileListItem* vs LSSharedFileList*)
+    private typealias SFLItemCopyPropFn = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
+    private typealias SFLItemSetPropFn  = @convention(c) (CFTypeRef, CFString, CFTypeRef) -> OSStatus
 
     // MARK: - Loaded symbols
 
@@ -42,8 +45,10 @@ class SidebarManager {
     private let _getURL:   SFLURLFn
     private let _insert:   SFLInsertFn
     private let _remove:   SFLRemoveFn
-    private let _copyProp: SFLCopyPropFn
-    private let _setProp:  SFLSetPropFn
+    private let _copyProp:     SFLCopyPropFn
+    private let _setProp:      SFLSetPropFn
+    private let _itemCopyProp: SFLItemCopyPropFn
+    private let _itemSetProp:  SFLItemSetPropFn
 
     // Resolve flags from the old public header (stable across all macOS versions)
     private static let _NoUserInteraction: UInt32 = 1
@@ -73,8 +78,10 @@ class SidebarManager {
         _getURL   = try sym("LSSharedFileListItemCopyResolvedURL")
         _insert   = try sym("LSSharedFileListInsertItemURL")
         _remove   = try sym("LSSharedFileListItemRemove")
-        _copyProp = try sym("LSSharedFileListCopyProperty")
-        _setProp  = try sym("LSSharedFileListSetProperty")
+        _copyProp     = try sym("LSSharedFileListCopyProperty")
+        _setProp      = try sym("LSSharedFileListSetProperty")
+        _itemCopyProp = try sym("LSSharedFileListItemCopyProperty")
+        _itemSetProp  = try sym("LSSharedFileListItemSetProperty")
 
         // FavoriteItems list
         guard let _KFavPtr = dlsym(_Handle, "kLSSharedFileListFavoriteItems") else {
@@ -169,21 +176,28 @@ class SidebarManager {
 
     // MARK: - Locations: items, state, and control
 
-    // All keys verified by inspecting the actual FavoriteVolumes.sfl4 NSKeyedArchiver payload.
-    // Keys that existed in the file before any writes = Finder writes them itself.
-    // Keys that were nil before our writes but accepted by lsd = added in newer macOS (14+).
+    // List-level property keys — verified via FavoriteVolumes.sfl4 inspection.
+    // These control volume *categories* shown under Locations (Finder reads these from lsd).
+    // Note: .servers uses ShowNetworkVolumes (confirmed in sfl4), NOT ShowConnectedServers.
     private static let _locKey: [LocationItem: String] = [
         .computer:    "com.apple.LSSharedFileList.FavoriteVolumes.ComputerIsVisible",
         .harddrives:  "com.apple.LSSharedFileList.FavoriteVolumes.ShowHardDrives",
         .external:    "com.apple.LSSharedFileList.FavoriteVolumes.ShowExternalVolumes",
         .cds:         "com.apple.LSSharedFileList.FavoriteVolumes.ShowEjectableVolumes",
         .bonjour:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowBonjour",
-        .servers:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowConnectedServers",
-        .airdrop:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowAirDrop",
-        .icloud:      "com.apple.LSSharedFileList.FavoriteVolumes.ShowiCloudDrive",
-        .home:        "com.apple.LSSharedFileList.FavoriteVolumes.ShowHome",
-        .trash:       "com.apple.LSSharedFileList.FavoriteVolumes.ShowTrash",
+        .servers:     "com.apple.LSSharedFileList.FavoriteVolumes.ShowNetworkVolumes",
         .cloudstorage:"com.apple.LSSharedFileList.FavoriteVolumes.ShowCloudStorage",
+    ]
+
+    // Special items that live as explicit items in the FavoriteVolumes snapshot.
+    // Their SpecialItemIdentifier value (from sfl4) is listed here.
+    // Visibility is controlled item-level via LSSharedFileListItemSetProperty(IsHidden),
+    // NOT via the list-level ShowXxx keys (which Finder ignores for these items).
+    private static let _specialId: [LocationItem: String] = [
+        .airdrop: "com.apple.LSSharedFileList.IsMeetingRoom",
+        .icloud:  "com.apple.LSSharedFileList.IsICloudDrive",
+        .home:    "com.apple.LSSharedFileList.IsHome",
+        .trash:   "com.apple.LSSharedFileList.IsTrash",
     ]
 
     enum LocationItem: String, CaseIterable {
@@ -237,6 +251,9 @@ class SidebarManager {
 
     func getLocations() -> LocationsState {
         func vol(_ _Item: LocationItem) -> Bool {
+            if let _Id = SidebarManager._specialId[_Item] {
+                return isVolItemEnabled(specialId: _Id)
+            }
             guard let _Key = Self._locKey[_Item] else { return true }
             guard let _V = _copyProp(_SFLVol, _Key as CFString)?.takeRetainedValue() else { return true }
             return (_V as AnyObject).boolValue ?? true
@@ -311,6 +328,10 @@ class SidebarManager {
             let _Val: CFPropertyList = _Enabled ? kCFBooleanTrue! : kCFBooleanFalse!
             CFPreferencesSetAppValue("ShowRecentTags" as CFString, _Val, "com.apple.finder" as CFString)
             CFPreferencesAppSynchronize("com.apple.finder" as CFString)
+        } else if let _Id = Self._specialId[_Item] {
+            // Special items (AirDrop, iCloud, Home, Trash) are explicit items in the
+            // FavoriteVolumes snapshot — set IsHidden at item level, not list level.
+            try setVolItemHidden(specialId: _Id, hidden: !_Enabled)
         } else {
             guard let _Key = Self._locKey[_Item] else {
                 throw SidebarError.apiUnavailable("no property key for \(_Item.rawValue)")
@@ -339,6 +360,51 @@ class SidebarManager {
     }
 
     // MARK: - Private helpers
+
+    /// Snapshot of the FavoriteVolumes list (Locations items).
+    private func volSnapshot() -> [CFTypeRef] {
+        var _Seed: UInt32 = 0
+        guard let _Arr = _snapshot(_SFLVol, &_Seed) as? [CFTypeRef] else { return [] }
+        return _Arr
+    }
+
+    /// Returns the FavoriteVolumes item whose SpecialItemIdentifier matches _Id,
+    /// excluding permanently system-hidden items (ItemVisibility = NeverVisible).
+    private func volItem(specialId _Id: String) -> CFTypeRef? {
+        let _IdKey  = "com.apple.LSSharedFileList.SpecialItemIdentifier" as CFString
+        let _VisKey = "com.apple.LSSharedFileList.ItemVisibility" as CFString
+        return volSnapshot().first { _Item in
+            guard let _Val = _itemCopyProp(_Item, _IdKey)?.takeRetainedValue() else { return false }
+            guard (_Val as? String) == _Id else { return false }
+            // Skip items that are permanently system-hidden
+            if let _V = _itemCopyProp(_Item, _VisKey)?.takeRetainedValue(),
+               (_V as? String) == "NeverVisible" {
+                return false
+            }
+            return true
+        }
+    }
+
+    /// Returns true if the special item is visible (IsHidden == false or not set).
+    private func isVolItemEnabled(specialId _Id: String) -> Bool {
+        guard let _Item = volItem(specialId: _Id) else { return true }
+        guard let _Val = _itemCopyProp(_Item, "com.apple.LSSharedFileList.IsHidden" as CFString)?.takeRetainedValue() else {
+            return true
+        }
+        return !((_Val as AnyObject).boolValue ?? false)
+    }
+
+    /// Sets or clears IsHidden on the matching special FavoriteVolumes item.
+    private func setVolItemHidden(specialId _Id: String, hidden _Hidden: Bool) throws {
+        guard let _Item = volItem(specialId: _Id) else {
+            throw SidebarError.itemNotFound(_Id)
+        }
+        let _Val: CFTypeRef = _Hidden ? kCFBooleanTrue! : kCFBooleanFalse!
+        let _Status = _itemSetProp(_Item, "com.apple.LSSharedFileList.IsHidden" as CFString, _Val)
+        guard _Status == 0 else {
+            throw SidebarError.apiUnavailable("LSSharedFileListItemSetProperty failed: OSStatus \(_Status)")
+        }
+    }
 
     private func snapshot() -> [CFTypeRef] {
         var _Seed: UInt32 = 0
