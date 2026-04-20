@@ -31,9 +31,8 @@ class SidebarManager {
     private typealias SFLRemoveFn   = @convention(c) (CFTypeRef, CFTypeRef) -> OSStatus
     private typealias SFLCopyPropFn     = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
     private typealias SFLSetPropFn      = @convention(c) (CFTypeRef, CFString, CFTypeRef) -> OSStatus
-    // Item-level variants (LSSharedFileListItem* vs LSSharedFileList*)
+    // Item-level read (used to identify special items in the FavoriteVolumes snapshot)
     private typealias SFLItemCopyPropFn = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
-    private typealias SFLItemSetPropFn  = @convention(c) (CFTypeRef, CFString, CFTypeRef) -> OSStatus
 
     // MARK: - Loaded symbols
 
@@ -48,7 +47,6 @@ class SidebarManager {
     private let _copyProp:     SFLCopyPropFn
     private let _setProp:      SFLSetPropFn
     private let _itemCopyProp: SFLItemCopyPropFn
-    private let _itemSetProp:  SFLItemSetPropFn
 
     // Resolve flags from the old public header (stable across all macOS versions)
     private static let _NoUserInteraction: UInt32 = 1
@@ -81,7 +79,6 @@ class SidebarManager {
         _copyProp     = try sym("LSSharedFileListCopyProperty")
         _setProp      = try sym("LSSharedFileListSetProperty")
         _itemCopyProp = try sym("LSSharedFileListItemCopyProperty")
-        _itemSetProp  = try sym("LSSharedFileListItemSetProperty")
 
         // FavoriteItems list
         guard let _KFavPtr = dlsym(_Handle, "kLSSharedFileListFavoriteItems") else {
@@ -329,9 +326,9 @@ class SidebarManager {
             CFPreferencesSetAppValue("ShowRecentTags" as CFString, _Val, "com.apple.finder" as CFString)
             CFPreferencesAppSynchronize("com.apple.finder" as CFString)
         } else if let _Id = Self._specialId[_Item] {
-            // Special items (AirDrop, iCloud, Home, Trash) are explicit items in the
-            // FavoriteVolumes snapshot — set IsHidden at item level, not list level.
-            try setVolItemHidden(specialId: _Id, hidden: !_Enabled)
+            // Special items (AirDrop, iCloud, Home, Trash): Finder reads the top-level
+            // `visibility` integer in sfl4 — write it directly, then reload sharedfilelistd.
+            try SidebarManager.modifySfl4Visibility(specialId: _Id, visible: _Enabled)
         } else {
             guard let _Key = Self._locKey[_Item] else {
                 throw SidebarError.apiUnavailable("no property key for \(_Item.rawValue)")
@@ -346,6 +343,10 @@ class SidebarManager {
         print("\(_Enabled ? "Enabled" : "Disabled"): \(_Item.rawValue)")
 
         if _Restart {
+            // Special items need sharedfilelistd to reload the sfl4 before Finder connects.
+            if Self._specialId[_Item] != nil {
+                SidebarManager.restartSharedFileListd()
+            }
             SidebarManager.restartFinder()
         }
     }
@@ -368,42 +369,130 @@ class SidebarManager {
         return _Arr
     }
 
-    /// Returns the FavoriteVolumes item whose SpecialItemIdentifier matches _Id,
-    /// excluding permanently system-hidden items (ItemVisibility = NeverVisible).
+    /// Returns the FavoriteVolumes item whose SpecialItemIdentifier matches _Id.
+    /// Items with visibility=1 (hidden) are filtered from the snapshot by lsd, so
+    /// returning nil means the item is hidden (or missing).
     private func volItem(specialId _Id: String) -> CFTypeRef? {
-        let _IdKey  = "com.apple.LSSharedFileList.SpecialItemIdentifier" as CFString
-        let _VisKey = "com.apple.LSSharedFileList.ItemVisibility" as CFString
+        let _IdKey = "com.apple.LSSharedFileList.SpecialItemIdentifier" as CFString
         return volSnapshot().first { _Item in
             guard let _Val = _itemCopyProp(_Item, _IdKey)?.takeRetainedValue() else { return false }
-            guard (_Val as? String) == _Id else { return false }
-            // Skip items that are permanently system-hidden
-            if let _V = _itemCopyProp(_Item, _VisKey)?.takeRetainedValue(),
-               (_V as? String) == "NeverVisible" {
-                return false
-            }
-            return true
+            return (_Val as? String) == _Id
         }
     }
 
-    /// Returns true if the special item is visible (IsHidden == false or not set).
+    /// Returns true if the special item is in the snapshot (visibility=0 = shown).
+    /// Hidden items (visibility=1) are absent from the snapshot.
     private func isVolItemEnabled(specialId _Id: String) -> Bool {
-        guard let _Item = volItem(specialId: _Id) else { return true }
-        guard let _Val = _itemCopyProp(_Item, "com.apple.LSSharedFileList.IsHidden" as CFString)?.takeRetainedValue() else {
-            return true
-        }
-        return !((_Val as AnyObject).boolValue ?? false)
+        return volItem(specialId: _Id) != nil
     }
 
-    /// Sets or clears IsHidden on the matching special FavoriteVolumes item.
-    private func setVolItemHidden(specialId _Id: String, hidden _Hidden: Bool) throws {
-        guard let _Item = volItem(specialId: _Id) else {
-            throw SidebarError.itemNotFound(_Id)
+    /// Directly modifies the visibility field in FavoriteVolumes.sfl4 for the
+    /// matching special item, then restarts sharedfilelistd so it reloads the file.
+    ///
+    /// Background: LSSharedFileListItemSetProperty only writes to CustomItemProperties,
+    /// but Finder reads the top-level `visibility` integer field (0=shown, 1=hidden).
+    /// The sfl4 file is owned by the current user and is directly writable via SSH /
+    /// non-sandboxed CLI contexts. plistlib handles the NSKeyedArchiver binary format.
+    private static func modifySfl4Visibility(specialId _Id: String, visible _Visible: Bool) throws {
+        let _SflPath = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.FavoriteVolumes.sfl4")
+
+        // Python script: modifies the top-level `visibility` integer for the matching item.
+        // Uses plistlib which handles NSKeyedArchiver UID references natively.
+        let _Script = #"""
+import plistlib, sys
+sfl, target_id, vis_arg = sys.argv[1], sys.argv[2], sys.argv[3]
+visible = vis_arg == "1"
+SPEC  = "com.apple.LSSharedFileList.SpecialItemIdentifier"
+VIS   = "visibility"
+CIP   = "CustomItemProperties"
+ITVIS = "com.apple.LSSharedFileList.ItemVisibility"
+with open(sfl, "rb") as f:
+    data = plistlib.load(f)
+objs = data["$objects"]
+uid0 = uid1 = None
+for i, obj in enumerate(objs):
+    if type(obj) is int:
+        if obj == 0 and uid0 is None: uid0 = i
+        if obj == 1 and uid1 is None: uid1 = i
+if uid0 is None:
+    sys.exit("no int 0 in $objects")
+if uid1 is None:
+    objs.append(1); uid1 = len(objs) - 1
+target_uid = uid0 if visible else uid1
+root = objs[data["$top"]["root"].data]
+for rk, rv in zip(root["NS.keys"], root["NS.objects"]):
+    if objs[rk.data] == "items":
+        items_arr = objs[rv.data]; break
+else:
+    sys.exit("items array not found")
+changed = 0
+for item_ref in items_arr["NS.objects"]:
+    item = objs[item_ref.data]
+    if "NS.keys" not in item: continue
+    keys = [objs[k.data] for k in item["NS.keys"]]
+    vals = item["NS.objects"]
+    if VIS not in keys or CIP not in keys: continue
+    cip = objs[vals[keys.index(CIP)].data]
+    if "NS.keys" not in cip: continue
+    ck = [objs[k.data] for k in cip["NS.keys"]]
+    cv = cip["NS.objects"]
+    if SPEC not in ck: continue
+    if objs[cv[ck.index(SPEC)].data] != target_id: continue
+    if ITVIS in ck and objs[cv[ck.index(ITVIS)].data] == "NeverVisible": continue
+    vals[keys.index(VIS)] = plistlib.UID(target_uid)
+    changed += 1
+if changed == 0:
+    sys.exit("item not found: " + target_id)
+with open(sfl, "wb") as f:
+    plistlib.dump(data, f, fmt=plistlib.FMT_BINARY)
+"""#
+
+        let _TmpPath = "/tmp/mysides_sfl4_\(UUID().uuidString).py"
+        guard (try? _Script.write(toFile: _TmpPath, atomically: true, encoding: .utf8)) != nil else {
+            throw SidebarError.apiUnavailable("failed to write temp script")
         }
-        let _Val: CFTypeRef = _Hidden ? kCFBooleanTrue! : kCFBooleanFalse!
-        let _Status = _itemSetProp(_Item, "com.apple.LSSharedFileList.IsHidden" as CFString, _Val)
-        guard _Status == 0 else {
-            throw SidebarError.apiUnavailable("LSSharedFileListItemSetProperty failed: OSStatus \(_Status)")
+        defer { try? FileManager.default.removeItem(atPath: _TmpPath) }
+
+        let _Task = Process()
+        _Task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        _Task.arguments = [_TmpPath, _SflPath, _Id, _Visible ? "1" : "0"]
+        let _Pipe = Pipe()
+        _Task.standardOutput = _Pipe
+        _Task.standardError  = _Pipe
+        try _Task.run()
+        _Task.waitUntilExit()
+
+        if _Task.terminationStatus != 0 {
+            let _Out = String(data: _Pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
+            throw SidebarError.apiUnavailable("sfl4 modification failed: \(_Out)")
         }
+    }
+
+    /// Restarts the per-user sharedfilelistd so it reloads the sfl4 from disk.
+    /// launchd brings it back automatically; we wait briefly before restarting Finder.
+    static func restartSharedFileListd() {
+        let _UID = String(getuid())
+
+        // Preferred: ask launchd to kill-and-restart the service (no privilege needed
+        // for own GUI-domain services).
+        let _Kick = Process()
+        _Kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        _Kick.arguments = ["kickstart", "-k",
+                           "gui/\(_UID)/com.apple.coreservices.sharedfilelistd"]
+        try? _Kick.run()
+        _Kick.waitUntilExit()
+
+        // Fallback: direct SIGKILL if kickstart had no effect (process still owns it).
+        let _Kill = Process()
+        _Kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        _Kill.arguments = ["-9", "-u", _UID, "sharedfilelistd"]
+        try? _Kill.run()
+        _Kill.waitUntilExit()
+
+        // Give launchd ~1.5 s to restart sharedfilelistd before Finder connects.
+        Thread.sleep(forTimeInterval: 1.5)
     }
 
     private func snapshot() -> [CFTypeRef] {
