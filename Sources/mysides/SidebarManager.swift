@@ -332,7 +332,7 @@ class SidebarManager {
     /// Toggle a Locations item.
     /// - Parameter restartFinder: when true (default) kills Finder so the change
     ///   takes effect immediately; Finder relaunches automatically via launchd.
-    func setLocation(item _Item: LocationItem, enabled _Enabled: Bool, restartFinder _Restart: Bool = true) throws {
+    func setLocation(item _Item: LocationItem, enabled _Enabled: Bool) throws {
         if _Item == .tags {
             let _Val: CFPropertyList = _Enabled ? kCFBooleanTrue! : kCFBooleanFalse!
             CFPreferencesSetAppValue("ShowRecentTags" as CFString, _Val, "com.apple.finder" as CFString)
@@ -373,19 +373,6 @@ class SidebarManager {
         }
 
         print("\(_Enabled ? "Enabled" : "Disabled"): \(_Item.rawValue)")
-
-        if _Restart {
-            SidebarManager.restartFinder()
-        }
-    }
-
-    /// Restart Finder so pending Locations changes become visible.
-    static func restartFinder() {
-        let _Task = Process()
-        _Task.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-        _Task.arguments = ["Finder"]
-        try? _Task.run()
-        _Task.waitUntilExit()
     }
 
     // MARK: - Private helpers
