@@ -1,6 +1,6 @@
 import Foundation
 
-let _Version = "1.0.10"
+let _Version = "1.0.11"
 let _Args    = CommandLine.arguments
 
 func printUsage() {
@@ -15,8 +15,6 @@ func printUsage() {
     print("Locations:")
     print("  locations [--json]                     Show all Locations toggle states")
     print("  locations set <item> <on|off>          Toggle a Locations item")
-    print("  locations set <item> <on|off> --no-restart   Toggle without restarting Finder")
-    print("  locations apply                        Restart Finder to apply pending changes")
     print("")
     print("  Items: icloud, cloudstorage, home, computer, harddrives,")
     print("         external, cds, airdrop, bonjour, servers, trash, tags")
@@ -32,9 +30,6 @@ func printUsage() {
     print("  \(_Prog) locations")
     print("  \(_Prog) locations --json")
     print("  \(_Prog) locations set airdrop off")
-    print("  \(_Prog) locations set harddrives off --no-restart")
-    print("  \(_Prog) locations set servers off --no-restart")
-    print("  \(_Prog) locations apply")
 }
 
 guard _Args.count >= 2 else {
@@ -81,12 +76,7 @@ do {
         try _Manager.remove(name: _Args[2])
 
     case "locations":
-        if _Args.count >= 3 && _Args[2] == "apply" {
-            // locations apply — restart Finder to apply pending changes
-            SidebarManager.restartFinder()
-            print("Applied.")
-
-        } else if _Args.count >= 3 && _Args[2] == "set" {
+        if _Args.count >= 3 && _Args[2] == "set" {
             // locations set <item> <on|off> [--no-restart]
             guard _Args.count >= 5 else {
                 fputs("Error: 'locations set' requires <item> and <on|off>\n", stderr)
@@ -107,9 +97,8 @@ do {
                 exit(1)
             }
 
-            let _NoRestart = _Args.contains("--no-restart")
-            let _Manager   = try SidebarManager()
-            try _Manager.setLocation(item: _Item, enabled: _StateStr == "on", restartFinder: !_NoRestart)
+            let _Manager = try SidebarManager()
+            try _Manager.setLocation(item: _Item, enabled: _StateStr == "on")
 
         } else {
             // locations [--json]
