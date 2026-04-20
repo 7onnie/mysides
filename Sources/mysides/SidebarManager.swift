@@ -466,6 +466,14 @@ with open(sfl, "wb") as f:
         if _Task.terminationStatus != 0 {
             let _Out = String(data: _Pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
+            // Detect TCC/sandbox denial (errno 1 = EPERM) and give actionable help.
+            if _Out.contains("Operation not permitted") || _Out.contains("PermissionError") {
+                throw SidebarError.apiUnavailable(
+                    "Full Disk Access required.\n" +
+                    "  System Settings → Privacy & Security → Full Disk Access\n" +
+                    "  → add your terminal app, then restart it."
+                )
+            }
             throw SidebarError.apiUnavailable("sfl4 modification failed: \(_Out)")
         }
     }
