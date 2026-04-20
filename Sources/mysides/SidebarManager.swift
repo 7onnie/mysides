@@ -187,15 +187,27 @@ class SidebarManager {
     ]
 
     // Special items that live as explicit items in the FavoriteVolumes snapshot.
-    // Their SpecialItemIdentifier value (from sfl4) is listed here.
-    // Visibility is controlled item-level via LSSharedFileListItemSetProperty(IsHidden),
-    // NOT via the list-level ShowXxx keys (which Finder ignores for these items).
+    // Their SpecialItemIdentifier is listed here; visibility is toggled by
+    // removing the item (hides: sharedfilelistd sets visibility=1 in sfl4) or
+    // re-inserting it with the SpecialItemIdentifier (shows: visibility=0).
+    // Both operations go through XPC to sharedfilelistd — no Full Disk Access needed.
     private static let _specialId: [LocationItem: String] = [
         .airdrop: "com.apple.LSSharedFileList.IsMeetingRoom",
         .icloud:  "com.apple.LSSharedFileList.IsICloudDrive",
         .home:    "com.apple.LSSharedFileList.IsHome",
         .trash:   "com.apple.LSSharedFileList.IsTrash",
     ]
+
+    // URLs for re-inserting special items (verified via LSSharedFileListItemCopyResolvedURL).
+    private static func specialUrl(for _Item: LocationItem) -> URL? {
+        switch _Item {
+        case .airdrop: return URL(string: "nwnode://domain-AirDrop")
+        case .icloud:  return URL(string: "x-apple-finder:icloud")
+        case .home:    return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        case .trash:   return URL(string: "x-finder:Trash")
+        default:       return nil
+        }
+    }
 
     enum LocationItem: String, CaseIterable {
         // Locations section
@@ -326,9 +338,29 @@ class SidebarManager {
             CFPreferencesSetAppValue("ShowRecentTags" as CFString, _Val, "com.apple.finder" as CFString)
             CFPreferencesAppSynchronize("com.apple.finder" as CFString)
         } else if let _Id = Self._specialId[_Item] {
-            // Special items (AirDrop, iCloud, Home, Trash): Finder reads the top-level
-            // `visibility` integer in sfl4 — write it directly, then reload sharedfilelistd.
-            try SidebarManager.modifySfl4Visibility(specialId: _Id, visible: _Enabled)
+            // Special items (AirDrop, iCloud, Home, Trash): toggle via Remove / re-Insert.
+            // LSSharedFileListItemRemove tells sharedfilelistd to set visibility=1 in sfl4.
+            // LSSharedFileListInsertItemURL with SpecialItemIdentifier sets visibility=0.
+            // Both go through XPC — no Full Disk Access needed.
+            let _IsOn = isVolItemEnabled(specialId: _Id)
+            if _Enabled && !_IsOn {
+                guard let _URL = Self.specialUrl(for: _Item) else {
+                    throw SidebarError.apiUnavailable("no URL for \(_Item.rawValue)")
+                }
+                let _Props = ["com.apple.LSSharedFileList.SpecialItemIdentifier": _Id] as CFDictionary
+                guard _insert(_SFLVol, _kLast, nil, nil, _URL as CFURL, _Props, nil) != nil else {
+                    throw SidebarError.apiUnavailable("LSSharedFileListInsertItemURL returned nil for \(_Item.rawValue)")
+                }
+            } else if !_Enabled && _IsOn {
+                guard let _VolItem = volItem(specialId: _Id) else {
+                    throw SidebarError.apiUnavailable("item not in snapshot: \(_Item.rawValue)")
+                }
+                let _Status = _remove(_SFLVol, _VolItem)
+                guard _Status == 0 else {
+                    throw SidebarError.apiUnavailable("LSSharedFileListItemRemove failed: OSStatus \(_Status)")
+                }
+            }
+            // else: already in desired state, no-op
         } else {
             guard let _Key = Self._locKey[_Item] else {
                 throw SidebarError.apiUnavailable("no property key for \(_Item.rawValue)")
@@ -343,10 +375,6 @@ class SidebarManager {
         print("\(_Enabled ? "Enabled" : "Disabled"): \(_Item.rawValue)")
 
         if _Restart {
-            // Special items need sharedfilelistd to reload the sfl4 before Finder connects.
-            if Self._specialId[_Item] != nil {
-                SidebarManager.restartSharedFileListd()
-            }
             SidebarManager.restartFinder()
         }
     }
@@ -384,123 +412,6 @@ class SidebarManager {
     /// Hidden items (visibility=1) are absent from the snapshot.
     private func isVolItemEnabled(specialId _Id: String) -> Bool {
         return volItem(specialId: _Id) != nil
-    }
-
-    /// Directly modifies the visibility field in FavoriteVolumes.sfl4 for the
-    /// matching special item, then restarts sharedfilelistd so it reloads the file.
-    ///
-    /// Background: LSSharedFileListItemSetProperty only writes to CustomItemProperties,
-    /// but Finder reads the top-level `visibility` integer field (0=shown, 1=hidden).
-    /// The sfl4 file is owned by the current user and is directly writable via SSH /
-    /// non-sandboxed CLI contexts. plistlib handles the NSKeyedArchiver binary format.
-    private static func modifySfl4Visibility(specialId _Id: String, visible _Visible: Bool) throws {
-        let _SflPath = (NSHomeDirectory() as NSString)
-            .appendingPathComponent("Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.FavoriteVolumes.sfl4")
-
-        // Python script: modifies the top-level `visibility` integer for the matching item.
-        // Uses plistlib which handles NSKeyedArchiver UID references natively.
-        let _Script = #"""
-import plistlib, sys
-sfl, target_id, vis_arg = sys.argv[1], sys.argv[2], sys.argv[3]
-visible = vis_arg == "1"
-SPEC  = "com.apple.LSSharedFileList.SpecialItemIdentifier"
-VIS   = "visibility"
-CIP   = "CustomItemProperties"
-ITVIS = "com.apple.LSSharedFileList.ItemVisibility"
-with open(sfl, "rb") as f:
-    data = plistlib.load(f)
-objs = data["$objects"]
-uid0 = uid1 = None
-for i, obj in enumerate(objs):
-    if type(obj) is int:
-        if obj == 0 and uid0 is None: uid0 = i
-        if obj == 1 and uid1 is None: uid1 = i
-if uid0 is None:
-    sys.exit("no int 0 in $objects")
-if uid1 is None:
-    objs.append(1); uid1 = len(objs) - 1
-target_uid = uid0 if visible else uid1
-root = objs[data["$top"]["root"].data]
-for rk, rv in zip(root["NS.keys"], root["NS.objects"]):
-    if objs[rk.data] == "items":
-        items_arr = objs[rv.data]; break
-else:
-    sys.exit("items array not found")
-changed = 0
-for item_ref in items_arr["NS.objects"]:
-    item = objs[item_ref.data]
-    if "NS.keys" not in item: continue
-    keys = [objs[k.data] for k in item["NS.keys"]]
-    vals = item["NS.objects"]
-    if VIS not in keys or CIP not in keys: continue
-    cip = objs[vals[keys.index(CIP)].data]
-    if "NS.keys" not in cip: continue
-    ck = [objs[k.data] for k in cip["NS.keys"]]
-    cv = cip["NS.objects"]
-    if SPEC not in ck: continue
-    if objs[cv[ck.index(SPEC)].data] != target_id: continue
-    if ITVIS in ck and objs[cv[ck.index(ITVIS)].data] == "NeverVisible": continue
-    vals[keys.index(VIS)] = plistlib.UID(target_uid)
-    changed += 1
-if changed == 0:
-    sys.exit("item not found: " + target_id)
-with open(sfl, "wb") as f:
-    plistlib.dump(data, f, fmt=plistlib.FMT_BINARY)
-"""#
-
-        let _TmpPath = "/tmp/mysides_sfl4_\(UUID().uuidString).py"
-        guard (try? _Script.write(toFile: _TmpPath, atomically: true, encoding: .utf8)) != nil else {
-            throw SidebarError.apiUnavailable("failed to write temp script")
-        }
-        defer { try? FileManager.default.removeItem(atPath: _TmpPath) }
-
-        let _Task = Process()
-        _Task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        _Task.arguments = [_TmpPath, _SflPath, _Id, _Visible ? "1" : "0"]
-        let _Pipe = Pipe()
-        _Task.standardOutput = _Pipe
-        _Task.standardError  = _Pipe
-        try _Task.run()
-        _Task.waitUntilExit()
-
-        if _Task.terminationStatus != 0 {
-            let _Out = String(data: _Pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
-            // Detect TCC/sandbox denial (errno 1 = EPERM) and give actionable help.
-            if _Out.contains("Operation not permitted") || _Out.contains("PermissionError") {
-                throw SidebarError.apiUnavailable(
-                    "Full Disk Access required.\n" +
-                    "  System Settings → Privacy & Security → Full Disk Access\n" +
-                    "  → add your terminal app, then restart it."
-                )
-            }
-            throw SidebarError.apiUnavailable("sfl4 modification failed: \(_Out)")
-        }
-    }
-
-    /// Restarts the per-user sharedfilelistd so it reloads the sfl4 from disk.
-    /// launchd brings it back automatically; we wait briefly before restarting Finder.
-    static func restartSharedFileListd() {
-        let _UID = String(getuid())
-
-        // Preferred: ask launchd to kill-and-restart the service (no privilege needed
-        // for own GUI-domain services).
-        let _Kick = Process()
-        _Kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        _Kick.arguments = ["kickstart", "-k",
-                           "gui/\(_UID)/com.apple.coreservices.sharedfilelistd"]
-        try? _Kick.run()
-        _Kick.waitUntilExit()
-
-        // Fallback: direct SIGKILL if kickstart had no effect (process still owns it).
-        let _Kill = Process()
-        _Kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        _Kill.arguments = ["-9", "-u", _UID, "sharedfilelistd"]
-        try? _Kill.run()
-        _Kill.waitUntilExit()
-
-        // Give launchd ~1.5 s to restart sharedfilelistd before Finder connects.
-        Thread.sleep(forTimeInterval: 1.5)
     }
 
     private func snapshot() -> [CFTypeRef] {

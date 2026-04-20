@@ -1,6 +1,6 @@
 import Foundation
 
-let _Version = "1.0.9"
+let _Version = "1.0.10"
 let _Args    = CommandLine.arguments
 
 func printUsage() {
@@ -82,8 +82,7 @@ do {
 
     case "locations":
         if _Args.count >= 3 && _Args[2] == "apply" {
-            // locations apply — reload sharedfilelistd (picks up sfl4 changes) then Finder
-            SidebarManager.restartSharedFileListd()
+            // locations apply — restart Finder to apply pending changes
             SidebarManager.restartFinder()
             print("Applied.")
 
