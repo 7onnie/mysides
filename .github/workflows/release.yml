@@ -7,8 +7,8 @@ on:
 
 jobs:
   build-and-release:
-    name: Build universal binary and update Homebrew formula
-    runs-on: macos-14          # Apple Silicon runner, can cross-compile x86_64
+    name: Build arm64 binary and update Homebrew formula
+    runs-on: macos-14          # Apple Silicon runner, builds arm64 natively
 
     permissions:
       contents: write          # needed to upload release assets
@@ -24,25 +24,20 @@ jobs:
       - name: Build arm64
         run: swift build -c release --arch arm64
 
-      - name: Build x86_64
-        run: swift build -c release --arch x86_64
-
-      - name: Create universal binary
+      - name: Verify architecture
         run: |
-          lipo -create \
-            .build/arm64-apple-macosx/release/mysides \
-            .build/x86_64-apple-macosx/release/mysides \
-            -output .build/mysides-universal
-          lipo -info .build/mysides-universal
+          # arm64-only per BUILD-POLICY.md (7onnie/.github) — fail if x86_64 slipped in
+          lipo -info .build/arm64-apple-macosx/release/mysides
+          lipo -info .build/arm64-apple-macosx/release/mysides | grep -qv x86_64
 
       - name: Package tarball
         id: package
         run: |
           _Version="${{ steps.version.outputs.version }}"
-          _TarName="mysides-${_Version}-universal.tar.gz"
+          _TarName="mysides-${_Version}-arm64.tar.gz"
           _TmpDir="$(mktemp -d)/mysides-${_Version}"
           mkdir -p "${_TmpDir}"
-          cp .build/mysides-universal "${_TmpDir}/mysides"
+          cp .build/arm64-apple-macosx/release/mysides "${_TmpDir}/mysides"
           # Exclude macOS extended attributes so the tarball is reproducible
           tar -czf "${_TarName}" --no-xattrs -C "$(dirname ${_TmpDir})" "mysides-${_Version}"
           echo "tarball=${_TarName}" >> "$GITHUB_OUTPUT"
@@ -88,6 +83,7 @@ jobs:
             license "MIT"
 
             depends_on :macos => :ventura
+            depends_on arch: :arm
 
             def install
               bin.install "mysides"
