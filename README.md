@@ -1,6 +1,17 @@
-# mysides
+<h1 align="center">mysides</h1>
 
-A command-line tool for managing the macOS Finder sidebar favorites — updated for modern macOS.
+<p align="center">
+  A command-line tool for managing the macOS Finder sidebar favorites — updated for modern macOS.
+</p>
+
+<!-- BADGES:START -->
+<p align="center">
+  <a href="https://github.com/7onnie/mysides/actions/workflows/release.yml"><img alt="CI" src="https://github.com/7onnie/mysides/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/7onnie/mysides/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/7onnie/mysides?sort=semver"></a>
+  <a href="https://github.com/7onnie/mysides/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/7onnie/mysides/total.svg"></a>
+  <a href="https://buymeacoffee.com/7onnie"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black"></a>
+</p>
+<!-- BADGES:END -->
 
 This is a Swift rewrite of the original [mosen/mysides](https://github.com/mosen/mysides) by Eamon Brosnan.
 The original used the `LSSharedFileList` API, which was deprecated in macOS 10.10 and **removed in macOS 12**.
