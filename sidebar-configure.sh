@@ -10,6 +10,10 @@
 #   mysides must be installed: brew install 7onnie/tap/mysides
 # ──────────────────────────────────────────────────────────────────────────────
 
+# This script is zsh-only (zsh arrays, ${(@f)} splitting, 1-based indexing).
+# If started by bash/sh, re-exec under zsh before the parser reaches zsh syntax.
+[ -z "${ZSH_VERSION}" ] && exec /bin/zsh "$0" "$@"
+
 _MySides="${_MySides:-/opt/homebrew/bin/mysides}"
 _User="${_User:-$(whoami)}"
 
@@ -21,31 +25,33 @@ _User="${_User:-$(whoami)}"
 # _FavNames and _FavURLs must have the same number of entries.
 
 typeset -a _FavNames=(
-    "Projekte"
+    "Programme"
+    "Schreibtisch"
+    "Dokumente"
     "Downloads"
-    "Repos"
 )
 typeset -a _FavURLs=(
-    "file:///Users/${_User}/Projects"
+    "file:///Applications/"
+    "file:///Users/${_User}/Desktop"
+    "file:///Users/${_User}/Documents"
     "file:///Users/${_User}/Downloads"
-    "file:///Users/${_User}/Repos"
 )
 
 # ── LOCATIONS ─────────────────────────────────────────────────────────────────
 # Set each item to "on" or "off". Leave a variable unset to leave it unchanged.
 
 _LocICloud="off"          # iCloud Drive
-_LocCloudStorage="off"    # Third-party cloud (Dropbox, Nextcloud…)
+_LocCloudStorage="on"     # Third-party cloud (Dropbox, Nextcloud…)
 _LocHome="on"             # Home folder
 _LocComputer="on"         # This Mac
 _LocHardDrives="on"       # Internal hard disks
 _LocExternal="on"         # External drives
-_LocCDs="off"             # CDs, DVDs, iOS devices
+_LocCDs="on"              # CDs, DVDs, iOS devices
 _LocAirDrop="off"         # AirDrop
-_LocBonjour="off"         # Bonjour computers
-_LocServers="off"         # Connected servers
+_LocBonjour="on"          # Bonjour computers
+_LocServers="on"          # Connected servers
 _LocTrash="on"            # Trash
-_LocTags="off"            # Recent Tags
+_LocTags="on"             # Recent Tags
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Logic — do not edit below this line
