@@ -57,9 +57,9 @@ _LocTags="on"             # Recent Tags
 # Logic — do not edit below this line
 # ══════════════════════════════════════════════════════════════════════════════
 
-_ok()  { print -- "  ✓ $*" }
-_skip(){ print -- "  · $*" }
-_run() { print -- "  → $*"; "$@" }
+_ok()  { print -- "  ✓ $*"; }
+_skip(){ print -- "  · $*"; }
+_run() { print -- "  → $*"; "$@"; }
 
 # ── Favourites ────────────────────────────────────────────────────────────────
 print "\n=== Sidebar Favourites ==="
@@ -81,7 +81,7 @@ for _CurName in "${_CurrentNames[@]}"; do
     [[ -z "${_CurName}" ]] && continue
     _Found=0
     for _WantName in "${_FavNames[@]}"; do
-        [[ "${_CurName}" == "${_WantName}" ]] && { _Found=1; break }
+        [[ "${_CurName}" == "${_WantName}" ]] && { _Found=1; break; }
     done
     if (( _Found == 0 )); then
         _run "${_MySides}" remove "${_CurName}"
@@ -96,7 +96,7 @@ for (( _I=1; _I<=${#_FavNames[@]}; _I++ )); do
     _WantURL="${_FavURLs[_I]}"
     _Found=0
     for _CurName in "${_CurrentNames[@]}"; do
-        [[ "${_CurName}" == "${_WantName}" ]] && { _Found=1; break }
+        [[ "${_CurName}" == "${_WantName}" ]] && { _Found=1; break; }
     done
     if (( _Found == 0 )); then
         _run "${_MySides}" add "${_WantName}" "${_WantURL}"
