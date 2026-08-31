@@ -9,6 +9,9 @@ jobs:
   build-and-release:
     name: Build arm64 binary and update Homebrew formula
     runs-on: macos-14          # Apple Silicon runner, builds arm64 natively
+    # 10x-Runner: ohne Limit kostet ein Haenger 360 x 10 = 3600 abgerechnete
+    # Minuten, mehr als ein Monatskontingent. Beobachtet ~3 min.
+    timeout-minutes: 20
 
     permissions:
       contents: write          # needed to upload release assets
