@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  # Notausgang: Lauf ohne neuen Tag nachholen. Die Version MUSS mitgegeben
+  # werden - sie kam bisher aus GITHUB_REF_NAME, und das waere bei einem
+  # Dispatch auf main schlicht "main" (Release-Name "vmain").
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version des bestehenden Tags, mit oder ohne fuehrendes v (z.B. 1.2.3)"
+        required: true
+        type: string
 
 jobs:
   build-and-release:
@@ -17,12 +26,40 @@ jobs:
       contents: write          # needed to upload release assets
 
     steps:
+      - name: Get version and tag
+        id: version
+        env:
+          # Ueber env statt direkt als ${{ }} im Script-Text: der Input ist
+          # freier Text und im Script waere er eine Injektionsstelle.
+          _Input: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${_Input}" ]
+          then
+            _Version="${_Input#v}"       # nimmt "1.2.3" und "v1.2.3"
+          else
+            _Version="${GITHUB_REF_NAME#v}"
+          fi
+          _Tag="v${_Version}"
+
+          # Ohne Tag kein Ziel fuer die Assets - lieber hier mit klarer Meldung
+          # abbrechen als spaeter beim Checkout oder beim Upload.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${_Tag}" >/dev/null 2>&1
+          then
+            echo "ERROR: Tag ${_Tag} existiert nicht."
+            exit 1
+          fi
+
+          echo "Version: ${_Version} (Tag ${_Tag})"
+          echo "version=${_Version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${_Tag}"         >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        with:
+          # Ausdruecklich den Tag auschecken: bei einem Dispatch stuende sonst
+          # main im Workspace und das Binary passte nicht zur Version.
+          ref: ${{ steps.version.outputs.tag }}
 
       - name: Build arm64
         run: swift build -c release --arch arm64
@@ -49,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" \
+          gh release upload "${{ steps.version.outputs.tag }}" \
             "${{ steps.package.outputs.tarball }}" \
             --clobber
 
